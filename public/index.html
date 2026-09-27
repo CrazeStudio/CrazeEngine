@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>CrazeEngine — Private Search</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#fff;color:#202124}header{height:64px;display:flex;align-items:center;justify-content:flex-end;padding:0 24px}.brand{font-weight:800;letter-spacing:-.04em;font-size:24px;margin-right:auto}.link{color:inherit;text-decoration:none;font-size:14px}.main{width:min(760px,92vw);margin:16vh auto 0;text-align:center}.logo{font-size:clamp(42px,10vw,72px);font-weight:800;letter-spacing:-.065em;margin-bottom:30px}.tag{color:#6b7280;margin:-18px 0 28px;font-size:15px}.search{display:flex;align-items:center;border:1px solid #d1d5db;border-radius:30px;min-height:58px;padding:5px 7px 5px 20px;box-shadow:0 3px 16px #0000000d}.search:focus-within{border-color:#9ca3af;box-shadow:0 4px 20px #00000014}input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:inherit;font-size:17px}button{border:0;border-radius:24px;padding:13px 21px;background:#111827;color:#fff;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:wait}.hint{margin-top:18px;font-size:13px;color:#6b7280}.results{width:min(820px,92vw);margin:42px auto 80px;text-align:left}.result{padding:18px 0;border-bottom:1px solid #e5e7eb}.result a{color:#1457d9;text-decoration:none;font-size:20px}.result a:hover{text-decoration:underline}.url{font-size:12px;color:#667085;margin:5px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.snippet{font-size:14px;line-height:1.55;color:#4b5563}.status{text-align:center;color:#6b7280;padding:30px}.error{color:#b42318}@media(max-width:520px){header{padding:0 16px}.main{margin-top:12vh}.search{min-height:52px}button{padding:11px 15px}.logo{font-size:50px}}
+@media(prefers-color-scheme:dark){body{background:#111827;color:#f9fafb}.tag,.hint,.url,.snippet,.status{color:#9ca3af}.search{border-color:#374151;box-shadow:none}.search:focus-within{border-color:#6b7280}.result{border-color:#374151}.result a{color:#8ab4f8}button{background:#f9fafb;color:#111827}}
+</style>
+</head>
+<body>
+<header><div class="brand">CrazeEngine</div><a class="link" href="/privacy.html">Privacy</a></header>
+<main class="main">
+<div class="logo">CrazeEngine</div><div class="tag">Search the web. Keep your search private.</div>
+<form id="searchForm" class="search" autocomplete="off">
+<input id="q" name="q" maxlength="200" placeholder="Search the web" aria-label="Search the web" spellcheck="false" autofocus>
+<button id="submit" type="submit">Search</button>
+</form>
+<div class="hint">No account · No search history · No ads from CrazeEngine</div>
+</main>
+<section id="results" class="results" hidden></section>
+<script>
+const form=document.getElementById('searchForm'),q=document.getElementById('q'),results=document.getElementById('results'),button=document.getElementById('submit');
+const params=new URLSearchParams(location.search);if(params.get('q')){q.value=params.get('q');search(params.get('q'))}
+form.addEventListener('submit',e=>{e.preventDefault();search(q.value)});
+function esc(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML}
+async function search(raw){const query=String(raw||'').trim().replace(/\s+/g,' ').slice(0,200);if(!query)return;history.replaceState(null,'','/?q='+encodeURIComponent(query));results.hidden=false;results.innerHTML='<div class="status">Searching…</div>';button.disabled=true;
+try{const r=await fetch('/api/search?q='+encodeURIComponent(query),{headers:{Accept:'application/json'}});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||'Search is temporarily unavailable.');const items=Array.isArray(data.results)?data.results:[];results.innerHTML=items.length?items.map(x=>`<article class="result"><a rel="noreferrer noopener" target="_blank" href="${esc(x.url)}">${esc(x.title||x.url)}</a><div class="url">${esc(x.url)}</div><div class="snippet">${esc(x.snippet||'')}</div></article>`).join(''):'<div class="status">No results found.</div>';}catch(e){results.innerHTML='<div class="status error">'+esc(e.message)+'</div>'}finally{button.disabled=false}}
+</script>
+</body>
+</html>
