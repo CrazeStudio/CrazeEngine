@@ -1,11 +1,9 @@
 package com.crazestudio.crazeengine
 
 import android.content.Context
-import android.content.Intent
 import android.os.Bundle
-import android.util.Base64
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.background
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,10 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,12 +25,10 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,7 +73,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun CrazeAiApp() {
+private fun CrazeAiApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
@@ -93,77 +87,75 @@ fun CrazeAiApp() {
     var systemPrompt by remember { mutableStateOf(prefs.getString(SYSTEM, "You are CrazeAi, a helpful and accurate AI assistant.") ?: "") }
     var dark by remember { mutableStateOf(true) }
     var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
+    var error by remember { mutableStateOf("") }
     val current = chats.firstOrNull { it.id == currentId } ?: chats.first()
 
-    fun save() = saveChats(prefs, chats)
+    fun save() { saveChats(prefs, chats) }
     fun newChat() {
         val chat = ChatConversation(UUID.randomUUID().toString(), "New chat", emptyList())
         chats = listOf(chat) + chats
         currentId = chat.id
         input = ""
-        error = null
+        error = ""
         page = "chat"
         save()
     }
-    fun replaceMessages(messages: List<ChatMessage>) {
-        val title = messages.firstOrNull { it.role == "user" }?.text?.trim()?.take(36)?.ifBlank { "New chat" } ?: current.title
-        chats = chats.map { if (it.id == currentId) it.copy(title = title, messages = messages) else it }
+    fun updateCurrent(messages: List<ChatMessage>) {
+        val firstUser = messages.firstOrNull { it.role == "user" }
+        val title = firstUser?.text?.trim()?.take(36)?.ifBlank { "New chat" } ?: current.title
+        chats = chats.map { chat -> if (chat.id == currentId) chat.copy(title = title, messages = messages) else chat }
         save()
     }
-    fun send() {
+    fun sendMessage() {
         if (loading || input.isBlank()) return
-        if (apiKey.isBlank()) {
-            error = "Add your Gemini API key in Settings."
-            page = "settings"
-            return
-        }
+        if (apiKey.isBlank()) { error = "Add your Gemini API key in Settings."; page = "settings"; return }
         val user = ChatMessage(role = "user", text = input.trim())
         val history = current.messages + user
-        replaceMessages(history)
+        updateCurrent(history)
         input = ""
-        error = null
+        error = ""
         loading = true
         scope.launch {
             try {
                 val answer = GeminiClient.generate(apiKey, model, systemPrompt, history)
-                replaceMessages(history + ChatMessage(role = "model", text = answer))
-            } catch (t: Throwable) {
-                error = t.message ?: "Gemini request failed"
-            } finally {
-                loading = false
-            }
+                updateCurrent(history + ChatMessage(role = "model", text = answer))
+            } catch (t: Throwable) { error = t.message ?: "Gemini request failed" }
+            finally { loading = false }
         }
     }
 
-    MaterialTheme(colorScheme = if (dark) darkColorScheme(primary = CrazeOrange) else lightColorScheme(primary = Color(0xFFB95700))) {
+    MaterialTheme {
         Scaffold(
             topBar = { TopAppBar(title = { Text(if (page == "chat") current.title else if (page == "history") "Chats" else "Settings") }) },
             bottomBar = {
                 NavigationBar {
-                    NavigationBarItem(page == "chat", { page = "chat" }, { Text("⌂") }, { Text("Chat") })
-                    NavigationBarItem(page == "history", { page = "history" }, { Text("◷") }, { Text("Chats") })
-                    NavigationBarItem(page == "settings", { page = "settings" }, { Text("⚙") }, { Text("Settings") })
+                    NavigationBarItem(selected = page == "chat", onClick = { page = "chat" }, icon = { Text("⌂") }, label = { Text("Chat") })
+                    NavigationBarItem(selected = page == "history", onClick = { page = "history" }, icon = { Text("◷") }, label = { Text("Chats") })
+                    NavigationBarItem(selected = page == "settings", onClick = { page = "settings" }, icon = { Text("⚙") }, label = { Text("Settings") })
                 }
             }
-        ) { padding ->
+        ) { paddingValues ->
             when (page) {
-                "settings" -> SettingsScreen(apiKey, { apiKey = it; prefs.edit().putString(API_KEY, it).apply() }, model, { model = it; prefs.edit().putString(MODEL, it).apply() }, systemPrompt, { systemPrompt = it; prefs.edit().putString(SYSTEM, it).apply() }, dark, { dark = it })
-                "history" -> HistoryScreen(chats, currentId, { currentId = it; page = "chat" }, { id -> chats = chats.filterNot { it.id == id }; if (chats.isEmpty()) chats = listOf(ChatConversation(UUID.randomUUID().toString(), "New chat", emptyList())); currentId = chats.first().id; save() }, ::newChat)
-                else -> ChatScreen(current.messages, input, { input = it }, loading, error, ::send, clipboard)
+                "settings" -> SettingsScreen(Modifier.padding(paddingValues), apiKey, { apiKey = it; prefs.edit().putString(API_KEY, it).apply() }, model, { model = it; prefs.edit().putString(MODEL, it).apply() }, systemPrompt, { systemPrompt = it; prefs.edit().putString(SYSTEM, it).apply() }, dark, { dark = it })
+                "history" -> HistoryScreen(Modifier.padding(paddingValues), chats, { currentId = it; page = "chat" }, { id ->
+                    chats = chats.filterNot { it.id == id }
+                    if (chats.isEmpty()) chats = listOf(ChatConversation(UUID.randomUUID().toString(), "New chat", emptyList()))
+                    currentId = chats.first().id
+                    save()
+                }, ::newChat)
+                else -> ChatScreen(Modifier.padding(paddingValues), current.messages, input, { input = it }, loading, error, ::sendMessage, clipboard)
             }
         }
     }
 }
 
 @Composable
-private fun ChatScreen(messages: List<ChatMessage>, input: String, setInput: (String) -> Unit, loading: Boolean, error: String?, send: () -> Unit, clipboard: androidx.compose.ui.platform.ClipboardManager) {
-    Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun ChatScreen(modifier: Modifier, messages: List<ChatMessage>, input: String, onInputChange: (String) -> Unit, loading: Boolean, error: String, onSend: () -> Unit, clipboard: androidx.compose.ui.platform.ClipboardManager) {
+    Column(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (messages.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Surface(Modifier.size(82.dp), shape = RoundedCornerShape(24.dp), color = CrazeOrange) { BoxLogo() }
-                Spacer(Modifier.height(14.dp))
+                Text("⚡", fontSize = 54.sp, color = CrazeOrange)
+                Spacer(Modifier.height(8.dp))
                 Text("CrazeAi", fontSize = 32.sp, fontWeight = FontWeight.Bold)
                 Text("Think faster. Build more.", color = Color.Gray)
             }
@@ -176,38 +168,35 @@ private fun ChatScreen(messages: List<ChatMessage>, input: String, setInput: (St
                         Text(if (user) "You" else "CrazeAi", fontWeight = FontWeight.SemiBold, color = if (user) CrazeOrange else MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(5.dp))
                         Text(message.text)
-                        if (!user) TextButton({ clipboard.setText(AnnotatedString(message.text)) }) { Text("Copy") }
+                        if (!user) TextButton(onClick = { clipboard.setText(AnnotatedString(message.text)) }) { Text("Copy") }
                     }
                 }
             }
-            if (loading) item { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("CrazeAi is thinking…") } }
+            if (loading) item { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(20.dp)); Spacer(Modifier.size(8.dp)); Text("CrazeAi is thinking…") } }
         }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
         Row(verticalAlignment = Alignment.Bottom) {
-            OutlinedTextField(input, setInput, Modifier.weight(1f), placeholder = { Text("Message CrazeAi…") }, maxLines = 5)
-            Spacer(Modifier.width(6.dp))
-            IconButton(send) { Text("➤", color = CrazeOrange, fontSize = 22.sp) }
+            OutlinedTextField(value = input, onValueChange = onInputChange, modifier = Modifier.weight(1f), placeholder = { Text("Message CrazeAi…") }, maxLines = 5)
+            Spacer(Modifier.size(6.dp))
+            IconButton(onClick = onSend, enabled = !loading) { Text("➤", color = CrazeOrange, fontSize = 22.sp) }
         }
     }
 }
 
 @Composable
-private fun BoxLogo() { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("⚡", fontSize = 44.sp, color = Color.Black) } }
-
-@Composable
-private fun HistoryScreen(chats: List<ChatConversation>, currentId: String, open: (String) -> Unit, delete: (String) -> Unit, newChat: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+private fun HistoryScreen(modifier: Modifier, chats: List<ChatConversation>, onOpen: (String) -> Unit, onDelete: (String) -> Unit, onNew: () -> Unit) {
+    Column(modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Conversations", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Button(newChat) { Text("New") }
+            Button(onClick = onNew) { Text("New") }
         }
         Spacer(Modifier.height(12.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(chats, key = { it.id }) { chat ->
-                Card(Modifier.fillMaxWidth().clickable { open(chat.id) }) {
+                Card(Modifier.fillMaxWidth().clickable { onOpen(chat.id) }) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) { Text(chat.title); Text("${chat.messages.size} messages", color = Color.Gray, fontSize = 12.sp) }
-                        TextButton({ delete(chat.id) }) { Text("Delete") }
+                        TextButton(onClick = { onDelete(chat.id) }) { Text("Delete") }
                     }
                 }
             }
@@ -216,41 +205,40 @@ private fun HistoryScreen(chats: List<ChatConversation>, currentId: String, open
 }
 
 @Composable
-private fun SettingsScreen(apiKey: String, setApiKey: (String) -> Unit, model: String, setModel: (String) -> Unit, prompt: String, setPrompt: (String) -> Unit, dark: Boolean, setDark: (Boolean) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+private fun SettingsScreen(modifier: Modifier, apiKey: String, onApiKeyChange: (String) -> Unit, model: String, onModelChange: (String) -> Unit, prompt: String, onPromptChange: (String) -> Unit, dark: Boolean, onDarkChange: (Boolean) -> Unit) {
+    LazyColumn(modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("CrazeAi", fontSize = 30.sp, fontWeight = FontWeight.Bold); Text("Gemini-powered AI assistant", color = Color.Gray) }
         item {
             Text("Gemini API key", fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(apiKey, setApiKey, Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), singleLine = true, placeholder = { Text("Paste your API key") })
+            OutlinedTextField(value = apiKey, onValueChange = onApiKeyChange, modifier = Modifier.fillMaxWidth(), visualTransformation = PasswordVisualTransformation(), singleLine = true, placeholder = { Text("Paste your API key") })
         }
-        item { Text("Model", fontWeight = FontWeight.SemiBold); OutlinedTextField(model, setModel, Modifier.fillMaxWidth(), singleLine = true) }
-        item { Text("System prompt", fontWeight = FontWeight.SemiBold); OutlinedTextField(prompt, setPrompt, Modifier.fillMaxWidth(), minLines = 4) }
-        item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Dark mode", Modifier.weight(1f)); androidx.compose.material3.Switch(dark, setDark) } }
-        item { Text("Your API key stays in local app preferences. Do not commit it to GitHub.", color = Color.Gray, fontSize = 12.sp) }
+        item { Text("Model", fontWeight = FontWeight.SemiBold); OutlinedTextField(value = model, onValueChange = onModelChange, modifier = Modifier.fillMaxWidth(), singleLine = true) }
+        item { Text("System prompt", fontWeight = FontWeight.SemiBold); OutlinedTextField(value = prompt, onValueChange = onPromptChange, modifier = Modifier.fillMaxWidth(), minLines = 4) }
+        item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Dark mode", Modifier.weight(1f)); Switch(checked = dark, onCheckedChange = onDarkChange) } }
+        item { Text("Your API key stays in local app preferences. Never commit it to GitHub.", color = Color.Gray, fontSize = 12.sp) }
     }
 }
 
 private fun saveChats(prefs: android.content.SharedPreferences, chats: List<ChatConversation>) {
     val root = JSONArray()
     chats.take(50).forEach { chat ->
-        val obj = JSONObject().put("id", chat.id).put("title", chat.title)
         val messages = JSONArray()
-        chat.messages.takeLast(100).forEach { messages.put(JSONObject().put("id", it.id).put("role", it.role).put("text", it.text)) }
-        obj.put("messages", messages)
-        root.put(obj)
+        chat.messages.takeLast(100).forEach { message -> messages.put(JSONObject().put("id", message.id).put("role", message.role).put("text", message.text)) }
+        root.put(JSONObject().put("id", chat.id).put("title", chat.title).put("messages", messages))
     }
     prefs.edit().putString(HISTORY, root.toString()).apply()
 }
 
 private fun loadChats(prefs: android.content.SharedPreferences): List<ChatConversation> = runCatching {
-    val root = JSONArray(prefs.getString(HISTORY, "[]"))
-    (0 until root.length()).map { i ->
-        val obj = root.getJSONObject(i)
+    val root = JSONArray(prefs.getString(HISTORY, "[]") ?: "[]")
+    (0 until root.length()).map { index ->
+        val obj = root.getJSONObject(index)
         val arr = obj.optJSONArray("messages") ?: JSONArray()
-        ChatConversation(obj.optString("id", UUID.randomUUID().toString()), obj.optString("title", "New chat"), (0 until arr.length()).map { j ->
-            val m = arr.getJSONObject(j)
-            ChatMessage(m.optString("id", UUID.randomUUID().toString()), m.optString("role", "user"), m.optString("text", ""))
-        })
+        val messages = (0 until arr.length()).map { j ->
+            val message = arr.getJSONObject(j)
+            ChatMessage(message.optString("id", UUID.randomUUID().toString()), message.optString("role", "user"), message.optString("text", ""))
+        }
+        ChatConversation(obj.optString("id", UUID.randomUUID().toString()), obj.optString("title", "New chat"), messages)
     }
 }.getOrDefault(emptyList())
 
@@ -258,20 +246,25 @@ private object GeminiClient {
     private val client = OkHttpClient()
     suspend fun generate(key: String, model: String, system: String, messages: List<ChatMessage>): String = withContext(Dispatchers.IO) {
         val contents = JSONArray()
-        messages.forEach { m ->
-            contents.put(JSONObject().put("role", if (m.role == "model") "model" else "user").put("parts", JSONArray().put(JSONObject().put("text", m.text))))
+        messages.forEach { message ->
+            contents.put(JSONObject().put("role", if (message.role == "model") "model" else "user").put("parts", JSONArray().put(JSONObject().put("text", message.text))))
         }
-        val body = JSONObject().put("contents", contents).apply {
-            if (system.isNotBlank()) put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
-        }
+        val body = JSONObject().put("contents", contents)
+        if (system.isNotBlank()) body.put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
         val request = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$key").post(body.toString().toRequestBody("application/json".toMediaType())).build()
         client.newCall(request).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw IllegalStateException("Gemini ${response.code}: ${runCatching { JSONObject(text).optJSONObject("error")?.optString("message") }.getOrNull() ?: text.take(240)}")
-            val json = JSONObject(text)
+            val responseText = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val message = runCatching { JSONObject(responseText).optJSONObject("error")?.optString("message") }.getOrNull()
+                throw IllegalStateException("Gemini ${response.code}: ${message ?: responseText.take(240)}")
+            }
+            val json = JSONObject(responseText)
             val candidates = json.optJSONArray("candidates") ?: throw IllegalStateException("Gemini returned no candidates")
-            val parts = candidates.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: throw IllegalStateException("Gemini returned no text")
-            buildString { for (i in 0 until parts.length()) append(parts.optJSONObject(i)?.optString("text").orEmpty()) }.trim().ifBlank { throw IllegalStateException("Gemini returned an empty response") }
+            val content = candidates.optJSONObject(0)?.optJSONObject("content") ?: throw IllegalStateException("Gemini returned no content")
+            val parts = content.optJSONArray("parts") ?: throw IllegalStateException("Gemini returned no text")
+            val result = buildString { for (i in 0 until parts.length()) append(parts.optJSONObject(i)?.optString("text").orEmpty()) }.trim()
+            if (result.isBlank()) throw IllegalStateException("Gemini returned an empty response")
+            result
         }
     }
 }
