@@ -1,8 +1,0 @@
-{
-  "name": "crazestudio/crazeengine-frontend",
-  "description": "CrazeEngine privacy-first PHP frontend",
-  "type": "project",
-  "require": {
-    "php": ">=8.1"
-  }
-}
