@@ -1,0 +1,1 @@
+<resources><style name="Theme.CrazeEngine" parent="android:style/Theme.Material.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:colorAccent">#FF7A00</item></style></resources>
