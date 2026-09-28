@@ -3,9 +3,9 @@ package com.crazestudio.crazeengine
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -68,22 +68,49 @@ fun CrazeEngineApp() {
                 else -> Column(Modifier.fillMaxSize().padding(pad)) {
                     if (messages.isEmpty()) Welcome(onNew = { messages = emptyList() })
                     else {
-                        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = listState, contentPadding = PaddingValues(vertical = 14.dp)) {
+                        LazyColumn(
+                            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
+                            state = listState,
+                            contentPadding = PaddingValues(vertical = 14.dp)
+                        ) {
                             itemsIndexed(messages) { index, msg ->
-                                MessageBubble(msg, onCopy = { clipboard.setText(AnnotatedString(msg.text)) }, onRegenerate = if (msg.role == "model" && index > 0) {{
-                                    val previous = messages[index - 1].text
-                                    scope.launch { loading = true; error = null; runCatching { Gemini.chat(apiKey, model, systemPrompt, messages.dropLast(1)) }.onSuccess { reply -> messages = messages.dropLast(1) + Message("model", reply) }.onFailure { error = it.message ?: "Request failed" }; loading = false }
-                                }} else null)
+                                MessageBubble(
+                                    msg,
+                                    onCopy = { clipboard.setText(AnnotatedString(msg.text)) },
+                                    onRegenerate = if (msg.role == "model" && index > 0) {
+                                        {
+                                            scope.launch {
+                                                loading = true
+                                                error = null
+                                                runCatching { Gemini.chat(apiKey, model, systemPrompt, messages.dropLast(1)) }
+                                                    .onSuccess { reply -> messages = messages.dropLast(1) + Message("model", reply) }
+                                                    .onFailure { error = it.message ?: "Request failed" }
+                                                loading = false
+                                            }
+                                        }
+                                    } else null
+                                )
                             }
-                            if (loading) item { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(20.dp), color = Orange); Spacer(Modifier.width(10.dp)); Text("CrazeAi is thinking…") } }
+                            if (loading) {
+                                item {
+                                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(Modifier.size(20.dp), color = Orange)
+                                        Spacer(Modifier.width(10.dp))
+                                        Text("CrazeAi is thinking…")
+                                    }
+                                }
+                            }
                         }
                     }
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
                     Composer(input, { input = it }, loading) {
                         if (input.isBlank() || apiKey.isBlank() || loading) return@Composer
-                        val text = input.trim(); input = ""; messages = messages + Message("user", text)
+                        val text = input.trim()
+                        input = ""
+                        messages = messages + Message("user", text)
                         scope.launch {
-                            loading = true; error = null
+                            loading = true
+                            error = null
                             runCatching { Gemini.chat(apiKey, model, systemPrompt, messages) }
                                 .onSuccess { messages = messages + Message("model", it) }
                                 .onFailure { error = it.message ?: "Request failed" }
@@ -97,6 +124,7 @@ fun CrazeEngineApp() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopBar(screen: String, navigate: (String) -> Unit) {
     CenterAlignedTopAppBar(
@@ -132,7 +160,12 @@ fun Welcome(onNew: () -> Unit) {
     }
 }
 
-@Composable fun Suggestion(text: String) { Surface(shape = RoundedCornerShape(18.dp), color = Card) { Text(text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), fontSize = 13.sp) } }
+@Composable
+fun Suggestion(text: String) {
+    Surface(shape = RoundedCornerShape(18.dp), color = Card) {
+        Text(text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), fontSize = 13.sp)
+    }
+}
 
 @Composable
 fun MessageBubble(msg: Message, onCopy: () -> Unit, onRegenerate: (() -> Unit)?) {
@@ -179,8 +212,14 @@ fun HistoryScreen(messages: List<Message>, openChat: () -> Unit) {
         Text("Conversation", fontSize = 25.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
         if (messages.isEmpty()) Text("No conversations yet.", color = Color.Gray)
-        else LazyColumn { items(messages.filter { it.role == "user" }) { Text(it.text, Modifier.fillMaxWidth().padding(vertical = 12.dp)); HorizontalDivider() } }
-        Spacer(Modifier.height(12.dp)); Button(onClick = openChat) { Text("Back to chat") }
+        else LazyColumn {
+            items(messages.filter { it.role == "user" }) { message ->
+                Text(message.text, Modifier.fillMaxWidth().padding(vertical = 12.dp))
+                HorizontalDivider()
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = openChat) { Text("Back to chat") }
     }
 }
 
